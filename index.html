@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sudoku Solver - Constraint Satisfaction</title>
+    <title>Sudoku Solver - Powered by Z3 WASM</title>
     <style>
         * {
             margin: 0;
@@ -143,6 +143,17 @@
             box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
         }
 
+        .btn-show-smt {
+            background: #9C27B0;
+            color: white;
+        }
+
+        .btn-show-smt:hover {
+            background: #7B1FA2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(156, 39, 176, 0.4);
+        }
+
         button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -213,38 +224,117 @@
         .instructions li {
             margin: 5px 0;
         }
+
+        .smt-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .smt-modal.show {
+            display: flex;
+        }
+
+        .smt-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .smt-content h2 {
+            margin-bottom: 15px;
+        }
+
+        .smt-content pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 30px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .close-modal:hover {
+            color: #333;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Sudoku Solver</h1>
-        <div class="subtitle">Powered by Constraint Propagation & Backtracking</div>
+        <div class="subtitle">Powered by Z3 Theorem Prover (WASM)</div>
 
         <div class="sudoku-grid" id="sudokuGrid"></div>
 
         <div class="controls">
-            <button class="btn-solve" id="solveBtn">Solve Puzzle</button>
+            <button class="btn-solve" id="solveBtn">Solve with Z3</button>
             <button class="btn-clear" id="clearBtn">Clear Grid</button>
             <button class="btn-example" id="exampleBtn">Load Example</button>
+            <button class="btn-show-smt" id="showSmtBtn">Show SMT-LIB</button>
         </div>
 
         <div class="status info" id="status">
-            Click "Load Example" to start, or enter your own puzzle
+            <span>Loading Z3 (WebAssembly)...</span>
         </div>
 
         <div class="instructions">
             <h3>How to use:</h3>
             <ul>
                 <li>Enter numbers 1-9 in the cells to create a puzzle</li>
-                <li>Click "Solve Puzzle" to find the solution using constraint satisfaction</li>
+                <li>Click "Solve with Z3" to find the solution using Z3 theorem prover</li>
                 <li>Click "Load Example" to try a sample puzzle</li>
+                <li>Click "Show SMT-LIB" to see the constraint encoding</li>
                 <li>Click "Clear Grid" to start over</li>
             </ul>
         </div>
     </div>
 
+    <!-- SMT-LIB Modal -->
+    <div class="smt-modal" id="smtModal">
+        <div class="smt-content">
+            <span class="close-modal" id="closeModal">&times;</span>
+            <h2>SMT-LIB Encoding</h2>
+            <pre id="smtCode"></pre>
+        </div>
+    </div>
+
+    <!-- Z3 WASM runtime -->
+    <script src="z3.js"></script>
     <script>
+        let z3Loaded = false;
         let givenCells = new Set();
+
+        // Initialize Z3
+        window.onload = function () {
+            if (typeof Z3 !== "undefined") {
+                Z3.onInitialized = () => {
+                    z3Loaded = true;
+                    updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
+                };
+            } else {
+                updateStatus('Z3 global object not found. Check that z3.js loaded correctly.', 'error');
+            }
+        };
 
         // Create the Sudoku grid
         function createGrid() {
@@ -327,36 +417,164 @@
             }
         }
 
-        // Constraint Satisfaction Solver using constraint propagation and backtracking
-        // Based on techniques similar to what SMT solvers like Z3 use
+        // Generate SMT-LIB encoding for Sudoku
+        function generateSMTLib(grid) {
+            let smt = '; Sudoku puzzle encoded as SMT-LIB constraints\n\n';
+            smt += '(set-logic QF_LIA)\n\n';
+
+            // Declare variables for each cell
+            smt += '; Declare variables for each cell (cell_row_col)\n';
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    smt += `(declare-const cell_${i}_${j} Int)\n`;
+                }
+            }
+            smt += '\n';
+
+            // Each cell must be between 1 and 9
+            smt += '; Each cell must contain a value between 1 and 9\n';
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    smt += `(assert (and (>= cell_${i}_${j} 1) (<= cell_${i}_${j} 9)))\n`;
+                }
+            }
+            smt += '\n';
+
+            // Row constraints: all different
+            smt += '; Row constraints: all values in each row must be distinct\n';
+            for (let i = 0; i < 9; i++) {
+                smt += `(assert (distinct`;
+                for (let j = 0; j < 9; j++) {
+                    smt += ` cell_${i}_${j}`;
+                }
+                smt += '))\n';
+            }
+            smt += '\n';
+
+            // Column constraints: all different
+            smt += '; Column constraints: all values in each column must be distinct\n';
+            for (let j = 0; j < 9; j++) {
+                smt += `(assert (distinct`;
+                for (let i = 0; i < 9; i++) {
+                    smt += ` cell_${i}_${j}`;
+                }
+                smt += '))\n';
+            }
+            smt += '\n';
+
+            // 3x3 box constraints: all different
+            smt += '; 3x3 box constraints: all values in each 3x3 box must be distinct\n';
+            for (let boxRow = 0; boxRow < 3; boxRow++) {
+                for (let boxCol = 0; boxCol < 3; boxCol++) {
+                    smt += `(assert (distinct`;
+                    for (let i = 0; i < 3; i++) {
+                        for (let j = 0; j < 3; j++) {
+                            const row = boxRow * 3 + i;
+                            const col = boxCol * 3 + j;
+                            smt += ` cell_${row}_${col}`;
+                        }
+                    }
+                    smt += '))\n';
+                }
+            }
+            smt += '\n';
+
+            // Given values (clues)
+            smt += '; Given values (puzzle clues)\n';
+            let hasGiven = false;
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    if (grid[i][j] !== 0) {
+                        smt += `(assert (= cell_${i}_${j} ${grid[i][j]}))\n`;
+                        hasGiven = true;
+                    }
+                }
+            }
+            if (!hasGiven) {
+                smt += '; (no given values)\n';
+            }
+            smt += '\n';
+
+            smt += '(check-sat)\n';
+            smt += '(get-model)\n';
+
+            return smt;
+        }
+
+        // Parse Z3 model output
+        function parseZ3Model(modelStr) {
+            const grid = Array(9).fill().map(() => Array(9).fill(0));
+
+            // Match patterns like (define-fun cell_0_0 () Int 5)
+            const regex = /cell_(\d)_(\d)\s*\(\)\s*Int\s*(\d)/g;
+            let match;
+
+            while ((match = regex.exec(modelStr)) !== null) {
+                const row = parseInt(match[1]);
+                const col = parseInt(match[2]);
+                const val = parseInt(match[3]);
+                grid[row][col] = val;
+            }
+
+            return grid;
+        }
+
+        // Solve Sudoku using Z3
         async function solveSudoku() {
+            if (!z3Loaded) {
+                updateStatus('Please wait: Z3 is still loading...', 'info');
+                return;
+            }
+
             const grid = getGridState();
-            updateStatus('Solving with constraint propagation...', 'info', true);
+            updateStatus('Solving with Z3 theorem prover...', 'info', true);
             disableButtons(true);
 
             try {
                 // Small delay to let UI update
                 await new Promise(resolve => setTimeout(resolve, 50));
 
-                // Create a copy of the grid to solve
-                const solution = grid.map(row => [...row]);
+                // Generate SMT-LIB encoding
+                const smtLib = generateSMTLib(grid);
 
-                // Solve using constraint propagation + backtracking
-                if (solveWithConstraints(solution)) {
-                    // Update grid with solution
-                    const cells = document.querySelectorAll('.sudoku-cell');
+                // Solve with Z3
+                const result = Z3.solve(smtLib);
+
+                if (result.includes('unsat')) {
+                    updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
+                } else if (result.includes('sat')) {
+                    // Parse the model
+                    const solution = parseZ3Model(result);
+
+                    // Verify we got a valid solution
+                    let validSolution = true;
                     for (let i = 0; i < 9; i++) {
                         for (let j = 0; j < 9; j++) {
-                            const index = i * 9 + j;
-                            if (!givenCells.has(index)) {
-                                cells[index].value = solution[i][j].toString();
-                                cells[index].classList.add('solved');
+                            if (solution[i][j] < 1 || solution[i][j] > 9) {
+                                validSolution = false;
+                                break;
                             }
                         }
                     }
-                    updateStatus('Solution found! Green cells show the computed solution.', 'success');
+
+                    if (validSolution) {
+                        // Update grid with solution
+                        const cells = document.querySelectorAll('.sudoku-cell');
+                        for (let i = 0; i < 9; i++) {
+                            for (let j = 0; j < 9; j++) {
+                                const index = i * 9 + j;
+                                cells[index].value = solution[i][j].toString();
+                                if (!givenCells.has(index)) {
+                                    cells[index].classList.add('solved');
+                                }
+                            }
+                        }
+                        updateStatus('Solution found by Z3! Green cells show the computed solution.', 'success');
+                    } else {
+                        updateStatus('Z3 returned an unexpected result. Please try again.', 'error');
+                    }
                 } else {
-                    updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
+                    updateStatus('Unexpected response from Z3. Please try again.', 'error');
                 }
             } catch (error) {
                 console.error('Error solving:', error);
@@ -364,100 +582,6 @@
             } finally {
                 disableButtons(false);
             }
-        }
-
-        // Check if placing num at grid[row][col] is valid
-        function isValid(grid, row, col, num) {
-            // Check row constraint
-            for (let j = 0; j < 9; j++) {
-                if (grid[row][j] === num) return false;
-            }
-
-            // Check column constraint
-            for (let i = 0; i < 9; i++) {
-                if (grid[i][col] === num) return false;
-            }
-
-            // Check 3x3 box constraint
-            const boxRow = Math.floor(row / 3) * 3;
-            const boxCol = Math.floor(col / 3) * 3;
-            for (let i = boxRow; i < boxRow + 3; i++) {
-                for (let j = boxCol; j < boxCol + 3; j++) {
-                    if (grid[i][j] === num) return false;
-                }
-            }
-
-            return true;
-        }
-
-        // Get possible values for a cell (constraint propagation)
-        function getPossibleValues(grid, row, col) {
-            if (grid[row][col] !== 0) return [];
-
-            const possible = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-
-            // Remove values in same row
-            for (let j = 0; j < 9; j++) {
-                possible.delete(grid[row][j]);
-            }
-
-            // Remove values in same column
-            for (let i = 0; i < 9; i++) {
-                possible.delete(grid[i][col]);
-            }
-
-            // Remove values in same 3x3 box
-            const boxRow = Math.floor(row / 3) * 3;
-            const boxCol = Math.floor(col / 3) * 3;
-            for (let i = boxRow; i < boxRow + 3; i++) {
-                for (let j = boxCol; j < boxCol + 3; j++) {
-                    possible.delete(grid[i][j]);
-                }
-            }
-
-            return Array.from(possible);
-        }
-
-        // Solve using backtracking with constraint propagation
-        function solveWithConstraints(grid) {
-            // Find empty cell with minimum remaining values (MRV heuristic)
-            let minOptions = 10;
-            let bestRow = -1;
-            let bestCol = -1;
-            let bestValues = [];
-
-            for (let i = 0; i < 9; i++) {
-                for (let j = 0; j < 9; j++) {
-                    if (grid[i][j] === 0) {
-                        const possible = getPossibleValues(grid, i, j);
-                        if (possible.length === 0) {
-                            return false; // No valid values, backtrack
-                        }
-                        if (possible.length < minOptions) {
-                            minOptions = possible.length;
-                            bestRow = i;
-                            bestCol = j;
-                            bestValues = possible;
-                        }
-                    }
-                }
-            }
-
-            // If no empty cell found, puzzle is solved
-            if (bestRow === -1) return true;
-
-            // Try each possible value for the selected cell
-            for (const num of bestValues) {
-                grid[bestRow][bestCol] = num;
-
-                if (solveWithConstraints(grid)) {
-                    return true;
-                }
-
-                grid[bestRow][bestCol] = 0; // Backtrack
-            }
-
-            return false;
         }
 
         // Clear the grid
@@ -490,6 +614,14 @@
             updateStatus('Example puzzle loaded. Click "Solve with Z3" to solve it!', 'info');
         }
 
+        // Show SMT-LIB encoding
+        function showSmtLib() {
+            const grid = getGridState();
+            const smtLib = generateSMTLib(grid);
+            document.getElementById('smtCode').textContent = smtLib;
+            document.getElementById('smtModal').classList.add('show');
+        }
+
         // Update status message
         function updateStatus(message, type = 'info', loading = false) {
             const status = document.getElementById('status');
@@ -504,17 +636,26 @@
             document.getElementById('solveBtn').disabled = disabled;
             document.getElementById('clearBtn').disabled = disabled;
             document.getElementById('exampleBtn').disabled = disabled;
+            document.getElementById('showSmtBtn').disabled = disabled;
         }
 
-        // Event listeners - attach after DOM is loaded
+        // Event listeners
         window.addEventListener('DOMContentLoaded', () => {
             document.getElementById('solveBtn').addEventListener('click', solveSudoku);
             document.getElementById('clearBtn').addEventListener('click', clearGrid);
             document.getElementById('exampleBtn').addEventListener('click', loadExample);
+            document.getElementById('showSmtBtn').addEventListener('click', showSmtLib);
+            document.getElementById('closeModal').addEventListener('click', () => {
+                document.getElementById('smtModal').classList.remove('show');
+            });
+            document.getElementById('smtModal').addEventListener('click', (e) => {
+                if (e.target.id === 'smtModal') {
+                    document.getElementById('smtModal').classList.remove('show');
+                }
+            });
 
             // Initialize grid
             createGrid();
-            updateStatus('Ready! Click "Load Example" to start, or enter your own puzzle', 'info');
         });
     </script>
 </body>
