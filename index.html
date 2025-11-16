@@ -369,7 +369,12 @@
 (check-sat)
 (get-model)`;
                         console.log('Test SMT:', testSMT);
-                        const testResult = Z3.solve(testSMT);
+
+                        // Use the correct Z3 WASM API
+                        Z3.init_context();
+                        const testResult = Z3.eval_smt2(testSMT);
+                        Z3.destroy_context();
+
                         console.log('Test result:', testResult);
 
                         if (testResult.includes('sat')) {
