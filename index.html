@@ -351,6 +351,29 @@
                 z3Loaded = true;
                 console.log('Z3 WASM loaded successfully');
                 console.log('WASM heap size:', Module.HEAP8.length);
+
+                // Test Z3 with a simple problem (delayed to avoid blocking page load)
+                setTimeout(() => {
+                    try {
+                        console.log('Testing Z3 with a simple problem...');
+                        const testSMT = `(set-logic QF_LIA)
+(declare-const x Int)
+(assert (= x 42))
+(check-sat)
+(get-model)`;
+                        console.log('Test SMT:', testSMT);
+                        const testResult = Z3.solve(testSMT);
+                        console.log('Test result:', testResult);
+                        if (testResult.includes('sat')) {
+                            console.log('✓ Z3 basic test passed');
+                        } else {
+                            console.warn('⚠ Z3 basic test returned unexpected result');
+                        }
+                    } catch (testErr) {
+                        console.error('✗ Z3 basic test failed:', testErr);
+                    }
+                }, 1000);
+
                 // Update status once DOM is ready
                 if (typeof updateStatus === 'function') {
                     updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
@@ -607,13 +630,27 @@
                 console.log('Calling Z3.solve()...');
                 console.log('Z3 object:', Z3);
 
-                // Wrap Z3 call with additional error handling
+                // Try calling Z3 directly with the lower-level API
                 let result;
                 try {
-                    console.log('Actually calling Z3.solve() now...');
-                    result = Z3.solve(smtLib);
+                    console.log('Actually calling Z3 now...');
+                    console.log('Initializing Z3 context...');
+
+                    // Try using the lower-level API directly instead of Z3.solve()
+                    Z3.init_context();
+                    console.log('Context initialized');
+
+                    console.log('Evaluating SMT2...');
+                    result = Z3.eval_smt2(smtLib);
+                    console.log('SMT2 evaluated, result length:', result ? result.length : 0);
+
+                    console.log('Destroying context...');
+                    Z3.destroy_context();
+                    console.log('Context destroyed');
+
+                    result = result.trim();
                     console.log('Z3 solve completed successfully');
-                    console.log('Result:', result);
+                    console.log('Result preview:', result.substring(0, 500));
                 } catch (z3Error) {
                     console.error('Z3 internal error:', z3Error);
                     console.error('Error details:', {
@@ -621,7 +658,15 @@
                         stack: z3Error.stack,
                         name: z3Error.name
                     });
-                    throw new Error('Z3 solver encountered an internal error. This may be due to WASM memory issues or incompatible input.');
+
+                    // Try to clean up context
+                    try {
+                        Z3.destroy_context();
+                    } catch (cleanupErr) {
+                        console.error('Failed to clean up context:', cleanupErr);
+                    }
+
+                    throw new Error('Z3 solver encountered an internal error: ' + z3Error.message);
                 }
 
                 if (!result || result === '') {
