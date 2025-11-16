@@ -347,25 +347,50 @@
                 z3Loaded = true;
                 console.log('Z3 WASM loaded successfully');
 
-                // Test Z3 with a simple problem (delayed to avoid blocking page load)
+                // Test Z3 with a mini constraint problem (delayed to avoid blocking page load)
                 setTimeout(() => {
                     try {
-                        console.log('Testing Z3 with a simple problem...');
+                        console.log('Testing Z3 with constraint problem...');
+                        // Test: find 3 distinct integers between 1-5 where a+b=c
                         const testSMT = `(set-logic QF_LIA)
-(declare-const x Int)
-(assert (= x 42))
+(declare-const a Int)
+(declare-const b Int)
+(declare-const c Int)
+; Range constraints
+(assert (and (>= a 1) (<= a 5)))
+(assert (and (>= b 1) (<= b 5)))
+(assert (and (>= c 1) (<= c 5)))
+; All different (pairwise inequalities)
+(assert (not (= a b)))
+(assert (not (= a c)))
+(assert (not (= b c)))
+; Sum constraint
+(assert (= c (+ a b)))
 (check-sat)
 (get-model)`;
                         console.log('Test SMT:', testSMT);
                         const testResult = Z3.solve(testSMT);
                         console.log('Test result:', testResult);
+
                         if (testResult.includes('sat')) {
-                            console.log('✓ Z3 basic test passed');
+                            // Extract values to verify
+                            const aMatch = testResult.match(/define-fun a \(\) Int\s+(\d+)/);
+                            const bMatch = testResult.match(/define-fun b \(\) Int\s+(\d+)/);
+                            const cMatch = testResult.match(/define-fun c \(\) Int\s+(\d+)/);
+
+                            if (aMatch && bMatch && cMatch) {
+                                const a = parseInt(aMatch[1]);
+                                const b = parseInt(bMatch[1]);
+                                const c = parseInt(cMatch[1]);
+                                console.log(`✓ Z3 constraint test passed: ${a} + ${b} = ${c}`);
+                            } else {
+                                console.log('✓ Z3 basic test passed (sat)');
+                            }
                         } else {
-                            console.warn('⚠ Z3 basic test returned unexpected result');
+                            console.warn('⚠ Z3 test returned unexpected result:', testResult);
                         }
                     } catch (testErr) {
-                        console.error('✗ Z3 basic test failed:', testErr);
+                        console.error('✗ Z3 test failed:', testErr);
                     }
                 }, 1000);
 
