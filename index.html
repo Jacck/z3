@@ -325,9 +325,55 @@
 
         // Set up Module configuration before loading Z3
         var Module = {
+            // Increase memory allocation for WASM
+            INITIAL_MEMORY: 256 * 1024 * 1024, // 256 MB
+            ALLOW_MEMORY_GROWTH: true,
+
+            // Suppress some warnings
+            print: function(text) {
+                // Filter out excessive internal debug messages
+                if (text.includes('sigaction') ||
+                    text.includes('Input') ||
+                    text.includes('exception') && text.length < 100) {
+                    return;
+                }
+                console.log(text);
+            },
+            printErr: function(text) {
+                // Filter out excessive internal debug messages
+                if (text.includes('sigaction')) {
+                    return;
+                }
+                console.error(text);
+            },
+
             onRuntimeInitialized: function() {
                 z3Loaded = true;
                 console.log('Z3 WASM loaded successfully');
+                console.log('WASM heap size:', Module.HEAP8.length);
+
+                // Test Z3 with a simple problem (delayed to avoid blocking page load)
+                setTimeout(() => {
+                    try {
+                        console.log('Testing Z3 with a simple problem...');
+                        const testSMT = `(set-logic QF_LIA)
+(declare-const x Int)
+(assert (= x 42))
+(check-sat)
+(get-model)`;
+                        console.log('Test SMT:', testSMT);
+                        const testResult = Z3.solve(testSMT);
+                        console.log('Test result:', testResult);
+                        if (testResult.includes('sat')) {
+                            console.log('✓ Z3 basic test passed');
+                        } else {
+                            console.warn('⚠ Z3 basic test returned unexpected result');
+                        }
+                    } catch (testErr) {
+                        console.error('✗ Z3 basic test failed:', testErr);
+                    }
+                }, 1000);
+
                 // Update status once DOM is ready
                 if (typeof updateStatus === 'function') {
                     updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
@@ -341,6 +387,41 @@
         };
     </script>
     <script src="z3.js"></script>
+    <script>
+        // Suppress excessive Z3 internal exception logging
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+
+        console.log = function(...args) {
+            const text = args.join(' ');
+            // Filter out Z3 internal exception handling messages
+            if (text.includes('can_catch on') ||
+                text.includes('Resuming exception') ||
+                text.includes('cxa_begin_catch') ||
+                text.includes('cxa_end_catch') ||
+                text.includes('addref') ||
+                text.includes('decref') ||
+                text.includes('Compiled code throwing')) {
+                return;
+            }
+            originalConsoleLog.apply(console, args);
+        };
+
+        console.error = function(...args) {
+            const text = args.join(' ');
+            // Filter out Z3 internal exception handling messages
+            if (text.includes('can_catch on') ||
+                text.includes('Resuming exception') ||
+                text.includes('cxa_begin_catch') ||
+                text.includes('cxa_end_catch') ||
+                text.includes('addref') ||
+                text.includes('decref') ||
+                text.includes('Compiled code throwing')) {
+                return;
+            }
+            originalConsoleError.apply(console, args);
+        };
+    </script>
     <script>
 
         // Create the Sudoku grid
@@ -541,17 +622,66 @@
                 // Small delay to let UI update
                 await new Promise(resolve => setTimeout(resolve, 50));
 
+                console.log('Generating SMT-LIB encoding...');
                 // Generate SMT-LIB encoding
                 const smtLib = generateSMTLib(grid);
+                console.log('SMT-LIB generated:', smtLib.substring(0, 200) + '...');
 
-                // Solve with Z3
-                const result = Z3.solve(smtLib);
+                console.log('Calling Z3.solve()...');
+                console.log('Z3 object:', Z3);
+
+                // Try calling Z3 directly with the lower-level API
+                let result;
+                try {
+                    console.log('Actually calling Z3 now...');
+                    console.log('Initializing Z3 context...');
+
+                    // Try using the lower-level API directly instead of Z3.solve()
+                    Z3.init_context();
+                    console.log('Context initialized');
+
+                    console.log('Evaluating SMT2...');
+                    result = Z3.eval_smt2(smtLib);
+                    console.log('SMT2 evaluated, result length:', result ? result.length : 0);
+
+                    console.log('Destroying context...');
+                    Z3.destroy_context();
+                    console.log('Context destroyed');
+
+                    result = result.trim();
+                    console.log('Z3 solve completed successfully');
+                    console.log('Result preview:', result.substring(0, 500));
+                } catch (z3Error) {
+                    console.error('Z3 internal error:', z3Error);
+                    console.error('Error details:', {
+                        message: z3Error.message,
+                        stack: z3Error.stack,
+                        name: z3Error.name
+                    });
+
+                    // Try to clean up context
+                    try {
+                        Z3.destroy_context();
+                    } catch (cleanupErr) {
+                        console.error('Failed to clean up context:', cleanupErr);
+                    }
+
+                    throw new Error('Z3 solver encountered an internal error: ' + z3Error.message);
+                }
+
+                if (!result || result === '') {
+                    updateStatus('Z3 returned an empty result. The solver may have crashed.', 'error');
+                    console.error('Empty result from Z3');
+                    return;
+                }
 
                 if (result.includes('unsat')) {
                     updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
                 } else if (result.includes('sat')) {
+                    console.log('Z3 found a solution, parsing model...');
                     // Parse the model
                     const solution = parseZ3Model(result);
+                    console.log('Parsed solution:', solution);
 
                     // Verify we got a valid solution
                     let validSolution = true;
@@ -579,9 +709,11 @@
                         updateStatus('Solution found by Z3! Green cells show the computed solution.', 'success');
                     } else {
                         updateStatus('Z3 returned an unexpected result. Please try again.', 'error');
+                        console.error('Invalid solution from Z3:', solution);
                     }
                 } else {
-                    updateStatus('Unexpected response from Z3. Please try again.', 'error');
+                    updateStatus('Unexpected response from Z3: ' + result.substring(0, 100), 'error');
+                    console.error('Unexpected Z3 result:', result);
                 }
             } catch (error) {
                 console.error('Error solving:', error);
