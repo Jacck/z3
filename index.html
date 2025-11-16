@@ -369,12 +369,7 @@
 (check-sat)
 (get-model)`;
                         console.log('Test SMT:', testSMT);
-
-                        // Use the correct Z3 WASM API
-                        Z3.init_context();
-                        const testResult = Z3.eval_smt2(testSMT);
-                        Z3.destroy_context();
-
+                        const testResult = Z3.solve(testSMT);
                         console.log('Test result:', testResult);
 
                         if (testResult.includes('sat')) {
@@ -660,25 +655,10 @@
                 console.log('Calling Z3.solve()...');
                 console.log('Z3 object:', Z3);
 
-                // Try calling Z3 directly with the lower-level API
+                // Call Z3.solve() which handles context init/destroy automatically
                 let result;
                 try {
-                    console.log('Actually calling Z3 now...');
-                    console.log('Initializing Z3 context...');
-
-                    // Try using the lower-level API directly instead of Z3.solve()
-                    Z3.init_context();
-                    console.log('Context initialized');
-
-                    console.log('Evaluating SMT2...');
-                    result = Z3.eval_smt2(smtLib);
-                    console.log('SMT2 evaluated, result length:', result ? result.length : 0);
-
-                    console.log('Destroying context...');
-                    Z3.destroy_context();
-                    console.log('Context destroyed');
-
-                    result = result.trim();
+                    result = Z3.solve(smtLib);
                     console.log('Z3 solve completed successfully');
                     console.log('Result preview:', result.substring(0, 500));
                 } catch (z3Error) {
@@ -688,14 +668,6 @@
                         stack: z3Error.stack,
                         name: z3Error.name
                     });
-
-                    // Try to clean up context
-                    try {
-                        Z3.destroy_context();
-                    } catch (cleanupErr) {
-                        console.error('Failed to clean up context:', cleanupErr);
-                    }
-
                     throw new Error('Z3 solver encountered an internal error: ' + z3Error.message);
                 }
 
