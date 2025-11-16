@@ -325,9 +325,32 @@
 
         // Set up Module configuration before loading Z3
         var Module = {
+            // Increase memory allocation for WASM
+            INITIAL_MEMORY: 256 * 1024 * 1024, // 256 MB
+            ALLOW_MEMORY_GROWTH: true,
+
+            // Suppress some warnings
+            print: function(text) {
+                // Filter out excessive internal debug messages
+                if (text.includes('sigaction') ||
+                    text.includes('Input') ||
+                    text.includes('exception') && text.length < 100) {
+                    return;
+                }
+                console.log(text);
+            },
+            printErr: function(text) {
+                // Filter out excessive internal debug messages
+                if (text.includes('sigaction')) {
+                    return;
+                }
+                console.error(text);
+            },
+
             onRuntimeInitialized: function() {
                 z3Loaded = true;
                 console.log('Z3 WASM loaded successfully');
+                console.log('WASM heap size:', Module.HEAP8.length);
                 // Update status once DOM is ready
                 if (typeof updateStatus === 'function') {
                     updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
@@ -341,6 +364,41 @@
         };
     </script>
     <script src="z3.js"></script>
+    <script>
+        // Suppress excessive Z3 internal exception logging
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+
+        console.log = function(...args) {
+            const text = args.join(' ');
+            // Filter out Z3 internal exception handling messages
+            if (text.includes('can_catch on') ||
+                text.includes('Resuming exception') ||
+                text.includes('cxa_begin_catch') ||
+                text.includes('cxa_end_catch') ||
+                text.includes('addref') ||
+                text.includes('decref') ||
+                text.includes('Compiled code throwing')) {
+                return;
+            }
+            originalConsoleLog.apply(console, args);
+        };
+
+        console.error = function(...args) {
+            const text = args.join(' ');
+            // Filter out Z3 internal exception handling messages
+            if (text.includes('can_catch on') ||
+                text.includes('Resuming exception') ||
+                text.includes('cxa_begin_catch') ||
+                text.includes('cxa_end_catch') ||
+                text.includes('addref') ||
+                text.includes('decref') ||
+                text.includes('Compiled code throwing')) {
+                return;
+            }
+            originalConsoleError.apply(console, args);
+        };
+    </script>
     <script>
 
         // Create the Sudoku grid
