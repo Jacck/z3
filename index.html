@@ -541,17 +541,44 @@
                 // Small delay to let UI update
                 await new Promise(resolve => setTimeout(resolve, 50));
 
+                console.log('Generating SMT-LIB encoding...');
                 // Generate SMT-LIB encoding
                 const smtLib = generateSMTLib(grid);
+                console.log('SMT-LIB generated:', smtLib.substring(0, 200) + '...');
 
-                // Solve with Z3
-                const result = Z3.solve(smtLib);
+                console.log('Calling Z3.solve()...');
+                console.log('Z3 object:', Z3);
+
+                // Wrap Z3 call with additional error handling
+                let result;
+                try {
+                    console.log('Actually calling Z3.solve() now...');
+                    result = Z3.solve(smtLib);
+                    console.log('Z3 solve completed successfully');
+                    console.log('Result:', result);
+                } catch (z3Error) {
+                    console.error('Z3 internal error:', z3Error);
+                    console.error('Error details:', {
+                        message: z3Error.message,
+                        stack: z3Error.stack,
+                        name: z3Error.name
+                    });
+                    throw new Error('Z3 solver encountered an internal error. This may be due to WASM memory issues or incompatible input.');
+                }
+
+                if (!result || result === '') {
+                    updateStatus('Z3 returned an empty result. The solver may have crashed.', 'error');
+                    console.error('Empty result from Z3');
+                    return;
+                }
 
                 if (result.includes('unsat')) {
                     updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
                 } else if (result.includes('sat')) {
+                    console.log('Z3 found a solution, parsing model...');
                     // Parse the model
                     const solution = parseZ3Model(result);
+                    console.log('Parsed solution:', solution);
 
                     // Verify we got a valid solution
                     let validSolution = true;
@@ -579,9 +606,11 @@
                         updateStatus('Solution found by Z3! Green cells show the computed solution.', 'success');
                     } else {
                         updateStatus('Z3 returned an unexpected result. Please try again.', 'error');
+                        console.error('Invalid solution from Z3:', solution);
                     }
                 } else {
-                    updateStatus('Unexpected response from Z3. Please try again.', 'error');
+                    updateStatus('Unexpected response from Z3: ' + result.substring(0, 100), 'error');
+                    console.error('Unexpected Z3 result:', result);
                 }
             } catch (error) {
                 console.error('Error solving:', error);
