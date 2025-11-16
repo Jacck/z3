@@ -325,10 +325,6 @@
 
         // Set up Module configuration before loading Z3
         var Module = {
-            // Increase memory allocation for WASM
-            INITIAL_MEMORY: 256 * 1024 * 1024, // 256 MB
-            ALLOW_MEMORY_GROWTH: true,
-
             // Suppress some warnings
             print: function(text) {
                 // Filter out excessive internal debug messages
@@ -350,7 +346,6 @@
             onRuntimeInitialized: function() {
                 z3Loaded = true;
                 console.log('Z3 WASM loaded successfully');
-                console.log('WASM heap size:', Module.HEAP8.length);
 
                 // Test Z3 with a simple problem (delayed to avoid blocking page load)
                 setTimeout(() => {
