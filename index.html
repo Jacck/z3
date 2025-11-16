@@ -319,22 +319,29 @@
     </div>
 
     <!-- Z3 WASM runtime -->
-    <script src="z3.js"></script>
     <script>
         let z3Loaded = false;
         let givenCells = new Set();
 
-        // Initialize Z3
-        window.onload = function () {
-            if (typeof Z3 !== "undefined") {
-                Z3.onInitialized = () => {
-                    z3Loaded = true;
+        // Set up Module configuration before loading Z3
+        var Module = {
+            onRuntimeInitialized: function() {
+                z3Loaded = true;
+                console.log('Z3 WASM loaded successfully');
+                // Update status once DOM is ready
+                if (typeof updateStatus === 'function') {
                     updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
-                };
-            } else {
-                updateStatus('Z3 global object not found. Check that z3.js loaded correctly.', 'error');
+                } else {
+                    // If updateStatus isn't defined yet, set it when DOM loads
+                    window.addEventListener('DOMContentLoaded', function() {
+                        updateStatus('Z3 loaded and ready! Enter a puzzle or load an example.', 'success');
+                    });
+                }
             }
         };
+    </script>
+    <script src="z3.js"></script>
+    <script>
 
         // Create the Sudoku grid
         function createGrid() {
