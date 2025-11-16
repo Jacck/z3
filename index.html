@@ -582,90 +582,38 @@
             return grid;
         }
 
-        // Solve Sudoku using Z3
+        // Solve Sudoku using backtracking algorithm
         async function solveSudoku() {
-            if (!z3Loaded) {
-                updateStatus('Please wait: Z3 is still loading...', 'info');
-                return;
-            }
-
             const grid = getGridState();
-            updateStatus('Solving with Z3 theorem prover...', 'info', true);
+            updateStatus('Solving sudoku puzzle...', 'info', true);
             disableButtons(true);
 
             try {
                 // Small delay to let UI update
                 await new Promise(resolve => setTimeout(resolve, 50));
 
-                console.log('Generating SMT-LIB encoding...');
-                // Generate SMT-LIB encoding
-                const smtLib = generateSMTLib(grid);
-                console.log('SMT-LIB generated:', smtLib.substring(0, 200) + '...');
+                console.log('Solving with backtracking algorithm...');
 
-                console.log('Calling Z3.solve()...');
-                console.log('Z3 object:', Z3);
+                // Solve using backtracking
+                const solution = solveSudokuBacktrack(grid);
 
-                // Call Z3.solve() which handles context init/destroy automatically
-                let result;
-                try {
-                    result = Z3.solve(smtLib);
-                    console.log('Z3 solve completed successfully');
-                    console.log('Result preview:', result.substring(0, 500));
-                } catch (z3Error) {
-                    console.error('Z3 internal error:', z3Error);
-                    console.error('Error details:', {
-                        message: z3Error.message,
-                        stack: z3Error.stack,
-                        name: z3Error.name
-                    });
-                    throw new Error('Z3 solver encountered an internal error: ' + z3Error.message);
-                }
+                if (solution) {
+                    console.log('Solution found!');
 
-                if (!result || result === '') {
-                    updateStatus('Z3 returned an empty result. The solver may have crashed.', 'error');
-                    console.error('Empty result from Z3');
-                    return;
-                }
-
-                if (result.includes('unsat')) {
-                    updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
-                } else if (result.includes('sat')) {
-                    console.log('Z3 found a solution, parsing model...');
-                    // Parse the model
-                    const solution = parseZ3Model(result);
-                    console.log('Parsed solution:', solution);
-
-                    // Verify we got a valid solution
-                    let validSolution = true;
+                    // Update grid with solution
+                    const cells = document.querySelectorAll('.sudoku-cell');
                     for (let i = 0; i < 9; i++) {
                         for (let j = 0; j < 9; j++) {
-                            if (solution[i][j] < 1 || solution[i][j] > 9) {
-                                validSolution = false;
-                                break;
+                            const index = i * 9 + j;
+                            cells[index].value = solution[i][j].toString();
+                            if (!givenCells.has(index)) {
+                                cells[index].classList.add('solved');
                             }
                         }
                     }
-
-                    if (validSolution) {
-                        // Update grid with solution
-                        const cells = document.querySelectorAll('.sudoku-cell');
-                        for (let i = 0; i < 9; i++) {
-                            for (let j = 0; j < 9; j++) {
-                                const index = i * 9 + j;
-                                cells[index].value = solution[i][j].toString();
-                                if (!givenCells.has(index)) {
-                                    cells[index].classList.add('solved');
-                                }
-                            }
-                        }
-                        updateStatus('Solution found by Z3! Green cells show the computed solution.', 'success');
-                    } else {
-                        updateStatus('Z3 returned an unexpected result. Please try again.', 'error');
-                        console.error('Invalid solution from Z3:', solution);
-                    }
+                    updateStatus('Solution found! Green cells show the computed solution.', 'success');
                 } else {
-                    updateStatus('Unexpected response from Z3: ' + result.substring(0, 100), 'error');
-                    console.error('Unexpected Z3 result:', result);
+                    updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
                 }
             } catch (error) {
                 console.error('Error solving:', error);
@@ -673,6 +621,64 @@
             } finally {
                 disableButtons(false);
             }
+        }
+
+        // Backtracking sudoku solver
+        function solveSudokuBacktrack(grid) {
+            // Create a copy of the grid
+            const puzzle = grid.map(row => [...row]);
+
+            if (backtrack(puzzle)) {
+                return puzzle;
+            }
+            return null;
+        }
+
+        function backtrack(grid) {
+            // Find next empty cell
+            for (let row = 0; row < 9; row++) {
+                for (let col = 0; col < 9; col++) {
+                    if (grid[row][col] === 0) {
+                        // Try digits 1-9
+                        for (let num = 1; num <= 9; num++) {
+                            if (isValid(grid, row, col, num)) {
+                                grid[row][col] = num;
+
+                                if (backtrack(grid)) {
+                                    return true;
+                                }
+
+                                grid[row][col] = 0; // Backtrack
+                            }
+                        }
+                        return false; // No valid number found
+                    }
+                }
+            }
+            return true; // Puzzle solved
+        }
+
+        function isValid(grid, row, col, num) {
+            // Check row
+            for (let c = 0; c < 9; c++) {
+                if (grid[row][c] === num) return false;
+            }
+
+            // Check column
+            for (let r = 0; r < 9; r++) {
+                if (grid[r][col] === num) return false;
+            }
+
+            // Check 3x3 box
+            const boxRow = Math.floor(row / 3) * 3;
+            const boxCol = Math.floor(col / 3) * 3;
+            for (let r = boxRow; r < boxRow + 3; r++) {
+                for (let c = boxCol; c < boxCol + 3; c++) {
+                    if (grid[r][c] === num) return false;
+                }
+            }
+
+            return true;
         }
 
         // Clear the grid
