@@ -523,41 +523,46 @@
             }
             smt += '\n';
 
-            // Row constraints: all different
+            // Row constraints: pairwise inequalities (more efficient than distinct)
             smt += '; Row constraints: all values in each row must be distinct\n';
             for (let i = 0; i < 9; i++) {
-                smt += `(assert (distinct`;
-                for (let j = 0; j < 9; j++) {
-                    smt += ` cell_${i}_${j}`;
+                for (let j1 = 0; j1 < 9; j1++) {
+                    for (let j2 = j1 + 1; j2 < 9; j2++) {
+                        smt += `(assert (not (= cell_${i}_${j1} cell_${i}_${j2})))\n`;
+                    }
                 }
-                smt += '))\n';
             }
             smt += '\n';
 
-            // Column constraints: all different
+            // Column constraints: pairwise inequalities
             smt += '; Column constraints: all values in each column must be distinct\n';
             for (let j = 0; j < 9; j++) {
-                smt += `(assert (distinct`;
-                for (let i = 0; i < 9; i++) {
-                    smt += ` cell_${i}_${j}`;
+                for (let i1 = 0; i1 < 9; i1++) {
+                    for (let i2 = i1 + 1; i2 < 9; i2++) {
+                        smt += `(assert (not (= cell_${i1}_${j} cell_${i2}_${j})))\n`;
+                    }
                 }
-                smt += '))\n';
             }
             smt += '\n';
 
-            // 3x3 box constraints: all different
+            // 3x3 box constraints: pairwise inequalities
             smt += '; 3x3 box constraints: all values in each 3x3 box must be distinct\n';
             for (let boxRow = 0; boxRow < 3; boxRow++) {
                 for (let boxCol = 0; boxCol < 3; boxCol++) {
-                    smt += `(assert (distinct`;
+                    const cells = [];
                     for (let i = 0; i < 3; i++) {
                         for (let j = 0; j < 3; j++) {
-                            const row = boxRow * 3 + i;
-                            const col = boxCol * 3 + j;
-                            smt += ` cell_${row}_${col}`;
+                            cells.push([boxRow * 3 + i, boxCol * 3 + j]);
                         }
                     }
-                    smt += '))\n';
+                    // Pairwise inequalities for this box
+                    for (let idx1 = 0; idx1 < cells.length; idx1++) {
+                        for (let idx2 = idx1 + 1; idx2 < cells.length; idx2++) {
+                            const [r1, c1] = cells[idx1];
+                            const [r2, c2] = cells[idx2];
+                            smt += `(assert (not (= cell_${r1}_${c1} cell_${r2}_${c2})))\n`;
+                        }
+                    }
                 }
             }
             smt += '\n';
