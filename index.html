@@ -541,11 +541,29 @@
                 // Small delay to let UI update
                 await new Promise(resolve => setTimeout(resolve, 50));
 
+                console.log('Generating SMT-LIB encoding...');
                 // Generate SMT-LIB encoding
                 const smtLib = generateSMTLib(grid);
+                console.log('SMT-LIB generated:', smtLib.substring(0, 200) + '...');
 
-                // Solve with Z3
-                const result = Z3.solve(smtLib);
+                console.log('Calling Z3.solve()...');
+                console.log('Z3 object:', Z3);
+
+                // Solve with Z3 - wrap in setTimeout to make it async and prevent UI blocking
+                const result = await new Promise((resolve, reject) => {
+                    setTimeout(() => {
+                        try {
+                            console.log('Actually calling Z3.solve() now...');
+                            const res = Z3.solve(smtLib);
+                            console.log('Z3.solve() returned');
+                            resolve(res);
+                        } catch (err) {
+                            console.error('Z3.solve() threw error:', err);
+                            reject(err);
+                        }
+                    }, 100);
+                });
+                console.log('Z3 result:', result);
 
                 if (result.includes('unsat')) {
                     updateStatus('No solution exists for this puzzle. Please check the values.', 'error');
